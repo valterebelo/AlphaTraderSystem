@@ -3,6 +3,7 @@ from pybit.unified_trading import HTTP
 import os
 from utils import utils
 importlib.reload(utils)
+from datetime import datetime
 
 class BybitWrapper():
 
@@ -20,7 +21,9 @@ class BybitWrapper():
             self.session = HTTP(api_key=self.api_key, api_secret=self.api_secret, demo=demo, log_requests=True)
         
 
-    # Account Data Endpoints 
+    ###########################################################################
+    ##########################  Account Data   ################################
+    ########################################################################### 
 
     def transaction_log(self, account_type='UNIFIED', market=None, coin=None):
         
@@ -54,6 +57,11 @@ class BybitWrapper():
         else:
             response=self.session.get_api_key_information()
             return response
+        
+    ###########################################################################
+    ##########################  Market Data   #################################
+    ###########################################################################    
+    
 
     # Market Data Endpoints (Common for Spot and Perpetual)
     def get_orderbook(self, ticker: str, category: str, limit: int = 100):
@@ -65,9 +73,72 @@ class BybitWrapper():
         return utils.parse_klines(response)
 
 
+    ###########################################################################
+    ##########################  Spot Order Management   #######################
+    ###########################################################################
+
+
+    def build_market_order_payload(self,
+                                ticker: str, 
+                                side: str, 
+                                qty: float, 
+                                execution_type: str = 'GTC', 
+                                annotations: str = None) -> dict:
+        """
+        Builds the payload for a market order on the spot market.
+
+        :param ticker: The trading pair symbol (e.g., 'BTCUSDT').
+        :param side: The side of the order ('Buy' or 'Sell').
+        :param qty: The quantity of the asset to buy or sell.
+        :param execution_type: The order execution type ('GTC', 'IOC', etc.). Defaults to 'GTC'.
+        :param annotations: Optional annotations for the order.
+        :return: A dictionary payload for the order.
+        """
+
+        # Validate side parameter
+        if side not in ['Buy', 'Sell']:
+            raise ValueError("Invalid side, must be 'Buy' or 'Sell'.")
+
+        # Validate execution_type parameter
+        valid_execution_types = ['GTC', 'IOC', 'FOK']
+        if execution_type not in valid_execution_types:
+            raise ValueError(f"Invalid execution_type, must be one of {valid_execution_types}.")
+
+        # Automate annotations if not provided
+        if annotations is None:
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            annotations = f"{side}_{qty}_{ticker}_{current_time}"
+
+        payload = {
+            "category": "spot",
+            "symbol": ticker,
+            "side": side,
+            "orderType": "Market",
+            "qty": qty,
+            "timeInForce": execution_type,
+            "orderLinkId": annotations,
+            "isLeverage": 0,
+            "orderFilter": "Order"
+        }
+
+        return payload
+
     # Spot Market Endpoints
-    def place_spot_order(self, symbol: str, side: str, order_type: str, qty: float, price: float = None):
-        pass
+    def place_spot_market_order(self, payload: dict):
+        """
+        Places a market order on the spot market using a pre-built payload.
+
+        :param payload: A dictionary containing the order details.
+        :return: The API response from placing the order.
+        """
+        try:
+            response = self.session.place_order(**payload)
+            
+        except Exception as e:
+            print(f"Error placing order: {e}")
+            return None
+
+        return response
     
     def cancel_spot_order(self, symbol: str, order_id: str):
         pass
@@ -82,8 +153,11 @@ class BybitWrapper():
         
         
         return utils.parse_order_history(response)
+    
 
-    # Perpetual Market Endpoints
+    ###########################################################################
+    ####################  Derivatives Position Management   ###################
+    ########################################################################### 
 
     def get_positions(self, market: str, ticker: str, settleCoin: str = None, limit: int = 20, cursor: str = None):
         response = self.session.get_positions(
@@ -110,16 +184,3 @@ class BybitWrapper():
     
     def get_perp_order_history(self, symbol: str, start_time: int = None, end_time: int = None, limit: int = 50):
         pass
-
-    # Wallet & Transfer Endpoints (Common)
-    def get_wallet_balance(self, coin: str = "USDT"):
-        pass
-
-    def transfer_funds(self, coin: str, amount: float, from_account: str, to_account: str):
-        pass
-
-    def get_deposit_history(self, coin: str = "USDT"):
-        pass
-
-    def get_withdrawal_history(self, coin: str = "USDT"):
-        pass 
