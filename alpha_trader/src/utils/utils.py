@@ -61,7 +61,9 @@ def parse_positions(response):
 
     for pos in response.get('result', {}).get('list', []):
         position = {
-            'position_idx': pos.get('positionIdx'),
+
+            'created_time': timestamp_to_datetime(int(pos.get('createdTime', 0))) if pos.get('createdTime') else None,
+            'updated_time': timestamp_to_datetime(int(pos.get('updatedTime', 0))) if pos.get('updatedTime') else None,
             'symbol': pos.get('symbol', 'Unknown Symbol'),
             'side': pos.get('side', 'Unknown Side'),
             'size': float(pos.get('size', 0)) if pos.get('size') else 0.0,
@@ -71,19 +73,20 @@ def parse_positions(response):
             'leverage': float(pos.get('leverage', 0)) if pos.get('leverage') else 0.0,
             'liq_price': pos.get('liqPrice', None),
             'mark_price': float(pos.get('markPrice', 0)) if pos.get('markPrice') else 0.0,
-            'created_time': timestamp_to_datetime(int(pos.get('createdTime', 0))) if pos.get('createdTime') else None,
-            'updated_time': timestamp_to_datetime(int(pos.get('updatedTime', 0))) if pos.get('updatedTime') else None,
             'position_status': pos.get('positionStatus', 'Unknown Status'),
             'trade_mode': pos.get('tradeMode', 'Unknown Trade Mode'),
             'position_balance': float(pos.get('positionBalance', 0)) if pos.get('positionBalance') else 0.0,
             'take_profit': float(pos.get('takeProfit', 0)) if pos.get('takeProfit') not in ['', None] else None,
             'stop_loss': float(pos.get('stopLoss', 0)) if pos.get('stopLoss') not in ['', None] else None,
+            'position_idx': pos.get('positionIdx')
         }
         positions.append(position)
 
+    if not positions:  # Check if the positions list is empty
+        return print('No open positions at the moment.')
+
     return pd.DataFrame(positions)
 
-import pandas as pd
 
 def parse_wallet_balance(response):
     if response.get('retCode') != 0:
@@ -149,7 +152,7 @@ def parse_transaction_log(response):
 
     for item in response.get('result', {}).get('list', []):
         transaction = {
-            'id': item.get('id'),
+            'order_link_id': item.get('orderLinkId'),
             'symbol': item.get('symbol'),
             'category': item.get('category'),
             'side': item.get('side'),
@@ -168,11 +171,13 @@ def parse_transaction_log(response):
             'bonus_change': float(item.get('bonusChange', 0)) if item.get('bonusChange') else None,
             'trade_id': item.get('tradeId'),
             'order_id': item.get('orderId'),
-            'order_link_id': item.get('orderLinkId'),
+            'id': item.get('id'),
         }
         transactions.append(transaction)
 
     return pd.DataFrame(transactions)
+
+
 
 
 def parse_order_history(response):
@@ -190,22 +195,22 @@ def parse_order_history(response):
     for order in response.get('result', {}).get('list', []):
         try:
             order_data = {
-                'order_id': order.get('orderId'),
+                'created_time': timestamp_to_datetime(int(order.get('createdTime', 0))) if order.get('createdTime') else None,
                 'order_link_id': order.get('orderLinkId', ''),
-                'symbol': order.get('symbol', ''),
-                'price': float(order.get('price', 0)) if order.get('price') not in ['', None] else 0.0,
-                'quantity': float(order.get('qty', 0)) if order.get('qty') not in ['', None] else 0.0,
                 'side': order.get('side', ''),
-                'position_idx': order.get('positionIdx', 0),
-                'order_status': order.get('orderStatus', ''),
-                'cancel_type': order.get('cancelType', ''),
-                'reject_reason': order.get('rejectReason', ''),
+                'symbol': order.get('symbol', ''),
                 'avg_price': float(order.get('avgPrice', 0)) if order.get('avgPrice') not in ['', None] else 0.0,
-                'leaves_qty': float(order.get('leavesQty', 0)) if order.get('leavesQty') not in ['', None] else 0.0,
-                'leaves_value': float(order.get('leavesValue', 0)) if order.get('leavesValue') not in ['', None] else 0.0,
+                'quantity': float(order.get('qty', 0)) if order.get('qty') not in ['', None] else 0.0,
+                'order_status': order.get('orderStatus', ''),
                 'cum_exec_qty': float(order.get('cumExecQty', 0)) if order.get('cumExecQty') not in ['', None] else 0.0,
                 'cum_exec_value': float(order.get('cumExecValue', 0)) if order.get('cumExecValue') not in ['', None] else 0.0,
                 'cum_exec_fee': float(order.get('cumExecFee', 0)) if order.get('cumExecFee') not in ['', None] else 0.0,
+                'price': float(order.get('price', 0)) if order.get('price') not in ['', None] else 0.0,
+                'position_idx': order.get('positionIdx', 0),
+                'cancel_type': order.get('cancelType', ''),
+                'reject_reason': order.get('rejectReason', ''),
+                'leaves_qty': float(order.get('leavesQty', 0)) if order.get('leavesQty') not in ['', None] else 0.0,
+                'leaves_value': float(order.get('leavesValue', 0)) if order.get('leavesValue') not in ['', None] else 0.0,
                 'time_in_force': order.get('timeInForce', ''),
                 'order_type': order.get('orderType', ''),
                 'trigger_price': float(order.get('triggerPrice', 0)) if order.get('triggerPrice') not in ['', None] else 0.0,
@@ -213,7 +218,7 @@ def parse_order_history(response):
                 'stop_loss': float(order.get('stopLoss', 0)) if order.get('stopLoss') not in ['', None] else 0.0,
                 'reduce_only': order.get('reduceOnly', False),
                 'close_on_trigger': order.get('closeOnTrigger', False),
-                'created_time': timestamp_to_datetime(int(order.get('createdTime', 0))) if order.get('createdTime') else None,
+                'order_id': order.get('orderId'),
                 'updated_time': timestamp_to_datetime(int(order.get('updatedTime', 0))) if order.get('updatedTime') else None,
             }
             order_history.append(order_data)
