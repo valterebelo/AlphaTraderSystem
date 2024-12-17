@@ -1,67 +1,31 @@
 """
-Projeto: AlfaTrader Intelligence
+Projeto: Alpha Trader Intelligence
 Objetivo: Implementação de um estimador de resultados. 
 Autor: Valter Rebelo
-
 """
 
 ###############################################################################
 ################################### Imports ###################################
 ###############################################################################
 
-
 import numpy as np
 import pandas as pd
 from tabulate import tabulate
-import matplotlib.pyplot as plt
-
-
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots  # Certifique-se de que esta importação está presente
 
 ###############################################################################
-########################### Class tradingStrategy #############################
+########################### Class PerformanceEstimator #########################
 ###############################################################################
 
 class PerformanceEstimator:
     """
     OBJETIVO: Estimar com precisão o desempenho de uma estratégia de trading, 
               computando diversos indicadores de desempenho.
-        
-    VARIÁVEIS: - data: Dados de atividade de trading do ambiente de trading.
-               - PnL: Lucro & Perda (indicador de desempenho).
-               - annualizedReturn: Retorno Anualizado (indicador de desempenho).
-               - annualizedVolatility: Volatilidade Anualizada (indicador de desempenho).
-               - profitability: Lucratividade (indicador de desempenho).
-               - averageProfitLossRatio: Proporção Média Lucro/Prejuízo (indicador de desempenho).
-               - sharpeRatio: Razão de Sharpe (indicador de desempenho).
-               - sortinoRatio: Razão de Sortino (indicador de desempenho).
-               - maxDD: Máxima Retração (indicador de desempenho).
-               - maxDDD: Duração Máxima da Retração (indicador de desempenho).
-               - skewness: Assimetria dos retornos (indicador de desempenho).
-               - numberOfTrades: Número de trades realizados.
-          
-    MÉTODOS:   -  __init__: Construtor do objeto inicializando algumas variáveis da classe. 
-               - computePnL: Computar o Lucro & Perda.
-               - computeAnnualizedReturn: Computar o Retorno Anualizado.
-               - computeAnnualizedVolatility: Computar a Volatilidade Anualizada.
-               - computeProfitability: Computar a Lucratividade e a Proporção Média Lucro/Prejuízo.
-               - computeSharpeRatio: Computar a Razão de Sharpe.
-               - computeSortinoRatio: Computar a Razão de Sortino.
-               - computeMaxDrawdown: Computar a Máxima Retração e a Duração Máxima da Retração.
-               - computeSkewness: Computar a Assimetria dos retornos.
-               - computeNumberOfTrades: Computar o número de trades realizados.
-               - computePerformance: Computar todos os indicadores de desempenho.
-               - displayPerformance: Exibir todo o conjunto de indicadores de desempenho em uma tabela.
     """
 
     def __init__(self, tradingData: pd.DataFrame, visualize=False):
-        """
-        OBJETIVO: Construtor do objeto inicializando as variáveis da classe.
-        
-        ENTRADAS: - tradingData: Dados de trading da execução da estratégia.
-                  - visualize: Se verdadeiro, gera gráficos para funções aplicáveis.
-        
-        SAÍDAS: /
-        """
         self.data = tradingData
         self.visualize = visualize
         self.PnL = 0
@@ -78,41 +42,50 @@ class PerformanceEstimator:
 
     def computePnL(self):
         self.PnL = self.data['net_worth'].iloc[-1] - self.data['net_worth'].iloc[0]
-        if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.data['net_worth'])
-            plt.title('Net Worth Over Time')
-            plt.xlabel('Time')
-            plt.ylabel('Net Worth')
-            plt.grid(True)
-            plt.show()
         return self.PnL
+
+    def computeMaxDrawdown(self):
+        cumulative_returns = self.data['net_worth'].cummax()
+        drawdown = (self.data['net_worth'] - cumulative_returns) / cumulative_returns
+        self.maxDD = drawdown.min()
+        end_date = drawdown.idxmin()
+        start_date = (self.data['net_worth'][:end_date]).idxmax()
+        self.maxDDD = (end_date - start_date).total_seconds() / 3600  # Duração em horas
+
+        if self.visualize:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['net_worth'], mode='lines', name='Net Worth'))
+            fig.add_trace(go.Scatter(x=self.data.index, y=cumulative_returns, mode='lines',
+                                     name='Cumulative Max', line=dict(dash='dash')))
+            fig.add_trace(go.Scatter(
+                x=self.data.index,
+                y=self.data['net_worth'],
+                fill='tonexty',
+                fillcolor='rgba(255,0,0,0.3)',
+                mode='none',
+                name='Drawdown'
+            ))
+            fig.update_layout(title='Max Drawdown Analysis',
+                              xaxis_title='Time',
+                              yaxis_title='Net Worth',
+                              template='plotly_white')
+            fig.show()
+
+        return self.maxDD, self.maxDDD
 
     def computeAnnualizedReturn(self):
         total_hours = (self.data.index[-1] - self.data.index[0]).total_seconds() / 3600
-        self.annualizedReturn = (self.data['net_worth'].iloc[-1] / self.data['net_worth'].iloc[0]-1) # ** (8760.0 / total_hours) - 1
-        if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.data['net_worth'], label='Net Worth')
-            plt.title('Return')
-            plt.xlabel('Time')
-            plt.ylabel('Net Worth')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+        self.annualizedReturn = (self.data['net_worth'].iloc[-1] / self.data['net_worth'].iloc[0] - 1)
         return self.annualizedReturn
 
     def computeAnnualizedVolatility(self):
         hourly_returns = self.data['strategy_returns']
-        self.annualizedVolatility = np.std(hourly_returns) #* np.sqrt(8760)
+        self.annualizedVolatility = np.std(hourly_returns)
         if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.hist(hourly_returns, bins=50, edgecolor='black')
-            plt.title('Distribution of Hourly Returns')
-            plt.xlabel('Hourly Returns')
-            plt.ylabel('Frequency')
-            plt.grid(True)
-            plt.show()
+            fig = px.histogram(self.data, x='strategy_returns', nbins=50, title='Distribution of Hourly Returns',
+                               labels={'strategy_returns': 'Hourly Returns', 'count': 'Frequency'})
+            fig.update_layout(template='plotly_white')
+            fig.show()
         return self.annualizedVolatility
 
     def computeProfitability(self):
@@ -126,147 +99,192 @@ class PerformanceEstimator:
         self.averageProfitLossRatio = avg_profit / abs(avg_loss) if avg_loss != 0 else 0
 
         if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.bar(['Profitable Trades', 'Losing Trades'], [len(profitable_trades), len(losing_trades)])
-            plt.title('Profitability Analysis')
-            plt.ylabel('Number of Trades')
-            plt.grid(True)
-            plt.show()
+            fig = go.Figure(data=[
+                go.Bar(name='Profitable Trades', x=['Profitable Trades'], y=[len(profitable_trades)],
+                       marker_color='green'),
+                go.Bar(name='Losing Trades', x=['Losing Trades'], y=[len(losing_trades)],
+                       marker_color='red')
+            ])
+            fig.update_layout(title='Profitability Analysis',
+                              yaxis_title='Number of Trades',
+                              template='plotly_white',
+                              barmode='group')
+            fig.show()
 
         return self.profitability, self.averageProfitLossRatio
 
     def computeSharpeRatio(self, risk_free_rate=0.05):
-        risk_free_rate_hourly = (1 + risk_free_rate) ** (1/8760) - 1
+        risk_free_rate_hourly = (1 + risk_free_rate) ** (1 / 8760) - 1
         excess_returns = self.data['strategy_returns'] - risk_free_rate_hourly
         self.sharpeRatio = np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(8760)
         if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.data.index, excess_returns.cumsum(), label='Cumulative Excess Returns')
-            plt.title('Sharpe Ratio Analysis')
-            plt.xlabel('Time')
-            plt.ylabel('Cumulative Excess Returns')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+            fig = px.line(x=self.data.index, y=excess_returns.cumsum(), title='Sharpe Ratio Analysis',
+                          labels={'x': 'Time', 'y': 'Cumulative Excess Returns'})
+            fig.add_hline(y=0, line_dash="dash", line_color="grey")
+            fig.update_layout(template='plotly_white')
+            fig.show()
         return self.sharpeRatio
 
     def computeSortinoRatio(self, risk_free_rate=0.02):
-        risk_free_rate_hourly = (1 + risk_free_rate) ** (1/8760) - 1
+        risk_free_rate_hourly = (1 + risk_free_rate) ** (1 / 8760) - 1
         excess_returns = self.data['strategy_returns'] - risk_free_rate_hourly
         downside_deviation = np.std(excess_returns[excess_returns < 0])
-        self.sortinoRatio = np.mean(excess_returns) / downside_deviation * np.sqrt(8760)
+        self.sortinoRatio = np.mean(excess_returns) / downside_deviation * np.sqrt(8760) if downside_deviation != 0 else 0
         if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.data.index, excess_returns, label='Excess Returns')
-            plt.fill_between(self.data.index, 0, excess_returns, where=excess_returns<0, color='red', alpha=0.5, label='Downside Risk')
-            plt.title('Sortino Ratio Analysis')
-            plt.xlabel('Time')
-            plt.ylabel('Excess Returns')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=self.data.index, y=excess_returns, mode='lines', name='Excess Returns'))
+            fig.add_trace(go.Scatter(
+                x=self.data.index,
+                y=[0]*len(self.data.index),
+                mode='lines',
+                line=dict(color='grey', dash='dash'),
+                name='Zero Line'
+            ))
+            fig.add_trace(go.Scatter(
+                x=self.data.index,
+                y=np.where(excess_returns < 0, excess_returns, 0),
+                fill='tozeroy',
+                fillcolor='rgba(255,0,0,0.3)',
+                mode='none',
+                name='Downside Risk'
+            ))
+            fig.update_layout(title='Sortino Ratio Analysis',
+                              xaxis_title='Time',
+                              yaxis_title='Excess Returns',
+                              template='plotly_white')
+            fig.show()
         return self.sortinoRatio
 
     def computeSkewness(self):
         self.skewness = self.data['strategy_returns'].skew()
-        if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.hist(self.data['strategy_returns'], bins=50, edgecolor='black')
-            plt.title('Skewness of Strategy Returns')
-            plt.xlabel('Strategy Returns')
-            plt.ylabel('Frequency')
-            plt.grid(True)
-            plt.show()
         return self.skewness
 
-    def computeMaxDrawdown(self):
-        cumulative_returns = self.data['net_worth'].cummax()
-        drawdown = (self.data['net_worth'] - cumulative_returns) / cumulative_returns
-        self.maxDD = drawdown.min()
-        end_date = drawdown.idxmin()
-        start_date = (self.data['net_worth'][:end_date]).idxmax()
-        self.maxDDD = (end_date - start_date).total_seconds() / 3600  # Duration in hours
-
-        if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.data['net_worth'], label='Net Worth')
-            plt.plot(cumulative_returns, label='Cumulative Max', linestyle='--')
-            plt.fill_between(self.data.index, self.data['net_worth'], cumulative_returns, color='red', alpha=0.3, label='Drawdown')
-            plt.title('Max Drawdown Analysis')
-            plt.xlabel('Time')
-            plt.ylabel('Net Worth')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
-
-        return self.maxDD, self.maxDDD
-    
     def plotPriceAndPosition(self):
         """
-        Plots the asset's closing price and the changes in position (long, short, cash),
-        with net worth on a secondary y-axis.
+        Updates:
+        1. Two subplots (rows=2, cols=1):
+        - Upper: Close Price + Position Markers
+        - Lower: Net Worth (segmented by position sign)
+        2. Remove net worth segments from the legend (showlegend=False).
+        3. Make symbols smaller (e.g. size=6).
         """
-        if self.visualize:
-            fig, ax1 = plt.subplots(figsize=(12, 8))
 
-            # Plot the closing price
-            ax1.set_xlabel('Time')
-            ax1.set_ylabel('Close Price', color='tab:blue')
-            ax1.plot(self.data.index, self.data['close'], label='Close Price', color='tab:blue')
-            ax1.tick_params(axis='y', labelcolor='tab:blue')
+        if self.visualize:
+            # Create two subplots, one for close/positions (top) and one for net worth (bottom)
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                vertical_spacing=0.05, 
+                                subplot_titles=("Close Price & Positions", "Net Worth"))
+
+            # Plot the BTC close price (thin gray line) on the top subplot
+            fig.add_trace(
+                go.Scatter(x=self.data.index, y=self.data['close'], mode='lines', 
+                        name='Close Price', line=dict(color='gray', width=1)),
+                row=1, col=1
+            )
 
             # Identify position changes
             position_changes = self.data['position'].diff().fillna(0) != 0
 
-            # Plot position markers only at changes
-            long_positions = self.data[(self.data['position'] == 1) & position_changes]
-            short_positions = self.data[(self.data['position'] == -1) & position_changes]
-            cash_positions = self.data[(self.data['position'] == 0) & position_changes]
+            # Define marker styles based on position value
+            position_marker_map = {
+                1.0: ('green', 'triangle-up'),
+                0.5: ('green', 'square'),
+                2.0: ('green', 'x'),
+                0: ('goldenrod', 'square'),
+                -0.5: ('red', 'square'),
+                -1.0: ('red', 'triangle-down')
+            }
 
-            ax1.scatter(long_positions.index, long_positions['close'], marker='^', color='green', label='Long', s=100)
-            ax1.scatter(short_positions.index, short_positions['close'], marker='v', color='red', label='Short', s=100)
-            ax1.scatter(cash_positions.index, cash_positions['close'], marker='s', color='yellow', label='Cash', s=100)
+            # Add a separate scatter trace for each position value at changes on the top subplot
+            for pos_val, (color, symbol) in position_marker_map.items():
+                df_pos = self.data[(self.data['position'] == pos_val) & position_changes]
+                if len(df_pos) > 0:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=df_pos.index, 
+                            y=df_pos['close'],
+                            mode='markers',
+                            marker=dict(
+                                symbol=symbol, 
+                                size=6,  # smaller symbols
+                                color=color,
+                                line=dict(color='black', width=1)
+                            ),
+                            name=f'Pos {pos_val}'
+                        ),
+                        row=1, col=1
+                    )
 
-            # Create a second y-axis for net worth
-            ax2 = ax1.twinx()
-            ax2.set_ylabel('Net Worth', color='tab:orange')
-            ax2.plot(self.data.index, self.data['net_worth'], label='Net Worth', color='tab:orange', linestyle='--')
-            ax2.tick_params(axis='y', labelcolor='tab:orange')
+            # Now handle the net worth line on the bottom subplot
+            # Map sign to color for net_worth line
+            sign_color_map = {
+                1: 'darkgreen',   # long
+                0: 'goldenrod',   # cash
+                -1: 'darkred'     # short
+            }
 
-            # Add grid and legend
-            fig.tight_layout()
-            ax1.grid(True)
-            ax1.legend(loc='upper left')
-            ax2.legend(loc='upper right')
+            positions = self.data['position'].values
+            net_worth_values = self.data['net_worth'].values
+            times = self.data.index
+            signs = np.sign(positions)
 
-            plt.title('Asset Price, Position Changes, and Net Worth')
-            plt.show()
+            # Segment the net_worth line by sign changes
+            segments = []
+            start_idx = 0
+            for i in range(1, len(signs)):
+                if signs[i] != signs[i-1]:
+                    segments.append((start_idx, i-1, signs[i-1]))
+                    start_idx = i
+            segments.append((start_idx, len(signs)-1, signs[-1]))
+
+            # Plot each net_worth segment with corresponding color and no legend
+            for start, end, s in segments:
+                segment_color = sign_color_map[s]
+                fig.add_trace(
+                    go.Scatter(
+                        x=times[start:end+1],
+                        y=net_worth_values[start:end+1],
+                        mode='lines',
+                        line=dict(color=segment_color, width=2),
+                        showlegend=False  # no legend for these segments
+                    ),
+                    row=2, col=1
+                )
+
+            # Update layout
+            fig.update_layout(
+                template='plotly_white',
+                showlegend=True,  # Keep legend for markers and close price
+                title='Asset Price, Position Changes, and Net Worth'
+            )
+            
+            fig.update_xaxes(title_text="Time", row=2, col=1)
+            fig.update_yaxes(title_text="Close Price", row=1, col=1)
+            fig.update_yaxes(title_text="Net Worth", row=2, col=1)
+
+            fig.show()
 
     def computeNumberOfTrades(self):
         self.numberOfTrades = self.data['position'].diff().abs().sum() / 2
         if self.visualize:
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.data['position'], label='Position')
-            plt.title('Number of Trades Over Time')
-            plt.xlabel('Time')
-            plt.ylabel('Position')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+            fig = px.line(self.data, x=self.data.index, y='position', title='Number of Trades Over Time',
+                          labels={'position': 'Position', 'index': 'Time'})
+            fig.update_layout(template='plotly_white')
+            fig.show()
         return self.numberOfTrades
 
     def computePerformance(self):
         performance = {
+            'Performance History': self.plotPriceAndPosition(),
             'PnL': self.computePnL(),
+            'Max Drawdown': self.computeMaxDrawdown(),
             'Annualized Return': self.computeAnnualizedReturn(),
             'Annualized Volatility': self.computeAnnualizedVolatility(),
             'Profitability': self.computeProfitability(),
             'Sharpe Ratio': self.computeSharpeRatio(),
             'Sortino Ratio': self.computeSortinoRatio(),
-            'Max Drawdown': self.computeMaxDrawdown(),
             'Skewness': self.computeSkewness(),
-            'Number of Trades': self.computeNumberOfTrades(),
-            'Positions': self.plotPriceAndPosition()
+            'Number of Trades': self.computeNumberOfTrades()
         }
         return performance
 
@@ -284,10 +302,13 @@ class PerformanceEstimator:
             performance['Max Drawdown'] = f"{float(max_dd):.2%}"
             performance['Max Drawdown Duration (hours)'] = f"{float(max_dd_duration):.1f}"
         
+        # Remove entries that are not indicators
+        performance = {k: v for k, v in performance.items() if k not in ['Positions']}
+        
         # Format other numeric values
         formatted_performance = {
             key: (
-                f"{value:.2%}" if key in ['Return', 'Volatility']
+                f"{value:.2%}" if key in ['Annualized Return', 'Annualized Volatility']
                 else f"{value:.2f}" if isinstance(value, (float, np.float64, np.float32))
                 else value
             )
@@ -296,10 +317,7 @@ class PerformanceEstimator:
         
         performance_table = tabulate(
             formatted_performance.items(), 
-            headers=['Indicator', 'Value'], 
+            headers=['Indicador', 'Valor'], 
             tablefmt='pretty'
         )
         print(performance_table)
-
-    
-        

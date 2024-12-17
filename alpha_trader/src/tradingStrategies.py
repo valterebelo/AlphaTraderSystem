@@ -4,6 +4,74 @@ import numpy as np
 import pandas as pd
 
 
+class AlphaTraderLongBiased2(Strategy):
+    def __init__(self, initial_balance, start, end):
+        super().__init__(initial_balance, start, end)
+
+    def generate_signals(self):
+        # Shorten MA windows to increase sensitivity and frequency of trades
+        self.data['context_long_ma'] = self.data['context'].rolling(window=2400, min_periods=1).mean()
+        self.data['context_short_ma'] = self.data['context'].rolling(window=600, min_periods=1).mean()
+
+        diff = self.data['context_short_ma'] - self.data['context_long_ma']
+
+        # Add a price momentum indicator over a short term (e.g., 24 hours)
+        self.data['price_momentum'] = (self.data['close'] / self.data['close'].shift(24) - 1).fillna(0)
+
+        def get_position(srs_val, diff_val, price_mom):
+            if srs_val > 0:
+                # Bullish signal scenario, using increments of 0,0.5,1,2
+                if diff_val < -0.05:
+                    # Very cool environment -> max bullish = 2x long
+                    return 2.0
+                elif diff_val < 0.0:
+                    # Slightly cool environment
+                    # If momentum >0, stay more aggressive (1x), else maybe 0.5x
+                    return 1.0 if price_mom > 0 else 0.5
+                elif diff_val < 0.05:
+                    # Near neutral environment
+                    # If momentum positive, 1x long; if not, 0.5x
+                    return 1.0 if price_mom > 0.02 else 0.5
+                elif diff_val < 0.1:
+                    # Slightly overheated
+                    # Possibly remain long but lower exposure
+                    return 0.5 if price_mom > 0.05 else 0.0
+                else:
+                    # Overheated environment
+                    return 0.0
+            elif srs_val < 0:
+                # Bearish signal scenario, using increments of 0,-0.5,-1.0
+                if diff_val > 0.2:
+                    # Significantly overheated
+                    # If momentum is negative, full -1.0, else -0.5
+                    return -1.0 if price_mom < -0.02 else -0.5
+                elif diff_val > 0.1:
+                    # Slightly overheated
+                    return -0.5
+                else:
+                    # Not overheated enough to short
+                    return 0.0
+            else:
+                # srs == 0, neutral signal => no position
+                return 0.0
+
+        self.data['position'] = self.data.apply(
+            lambda row: get_position(row['srs'], diff.loc[row.name], row['price_momentum']), axis=1
+        )
+
+        self.data['asset_returns'] = (self.data['close'] / self.data['open'] - 1).fillna(0)
+        self.data['strategy_returns'] = self.data['asset_returns'] * self.data['position']
+        self.data['net_worth'] = self.initial_balance * (1 + self.data['strategy_returns']).cumprod()
+
+        return self.data
+
+    def backtest(self, visualize=False):
+        return super().backtest(visualize)
+    
+    def apply_strategy(self):
+        return super().apply_strategy()
+    
+
 class BuyNHold(Strategy):
     def __init__(self, initial_balance, start, end):
         super().__init__(initial_balance, start, end)
@@ -41,7 +109,6 @@ class BuyNHold(Strategy):
                 pass
             else: 
                 self.wrapper.place_spot_order('BTCUSDT', side='sell')
-
 
 class AFT01(Strategy):
     def __init__(self, initial_balance, start, end):
@@ -191,75 +258,6 @@ class AlphaTraderLongBiased(Strategy):
     
     def apply_strategy(self):
         return super().apply_strategy()
-    
-class AlphaTraderLongBiased2(Strategy):
-    def __init__(self, initial_balance, start, end):
-        super().__init__(initial_balance, start, end)
-
-    def generate_signals(self):
-        # Shorten MA windows to increase sensitivity and frequency of trades
-        self.data['context_long_ma'] = self.data['context'].rolling(window=2400, min_periods=1).mean()
-        self.data['context_short_ma'] = self.data['context'].rolling(window=600, min_periods=1).mean()
-
-        diff = self.data['context_short_ma'] - self.data['context_long_ma']
-
-        # Add a price momentum indicator over a short term (e.g., 24 hours)
-        self.data['price_momentum'] = (self.data['close'] / self.data['close'].shift(24) - 1).fillna(0)
-
-        def get_position(srs_val, diff_val, price_mom):
-            if srs_val > 0:
-                # Bullish signal scenario, using increments of 0,0.5,1,2
-                if diff_val < -0.05:
-                    # Very cool environment -> max bullish = 2x long
-                    return 2.0
-                elif diff_val < 0.0:
-                    # Slightly cool environment
-                    # If momentum >0, stay more aggressive (1x), else maybe 0.5x
-                    return 1.0 if price_mom > 0 else 0.5
-                elif diff_val < 0.05:
-                    # Near neutral environment
-                    # If momentum positive, 1x long; if not, 0.5x
-                    return 1.0 if price_mom > 0.02 else 0.5
-                elif diff_val < 0.1:
-                    # Slightly overheated
-                    # Possibly remain long but lower exposure
-                    return 0.5 if price_mom > 0.05 else 0.0
-                else:
-                    # Overheated environment
-                    return 0.0
-            elif srs_val < 0:
-                # Bearish signal scenario, using increments of 0,-0.5,-1.0
-                if diff_val > 0.2:
-                    # Significantly overheated
-                    # If momentum is negative, full -1.0, else -0.5
-                    return -1.0 if price_mom < -0.02 else -0.5
-                elif diff_val > 0.1:
-                    # Slightly overheated
-                    return -0.5
-                else:
-                    # Not overheated enough to short
-                    return 0.0
-            else:
-                # srs == 0, neutral signal => no position
-                return 0.0
-
-        self.data['position'] = self.data.apply(
-            lambda row: get_position(row['srs'], diff.loc[row.name], row['price_momentum']), axis=1
-        )
-
-        self.data['asset_returns'] = (self.data['close'] / self.data['open'] - 1).fillna(0)
-        self.data['strategy_returns'] = self.data['asset_returns'] * self.data['position']
-        self.data['net_worth'] = self.initial_balance * (1 + self.data['strategy_returns']).cumprod()
-
-        return self.data
-
-    def backtest(self, visualize=False):
-        return super().backtest(visualize)
-    
-    def apply_strategy(self):
-        return super().apply_strategy()
-    
-
 
 class AlphaTraderOne(Strategy):
     def __init__(self, initial_balance, start, end):
