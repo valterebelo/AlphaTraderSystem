@@ -63,7 +63,7 @@ BYBIT_API_SECRET_EMP='seu_segredo_api_bybit_emp'
 
 1. Clone o repositório:
    ```bash
-   git clone https://github.com/valterebelo/alpha_trader.git
+   git clone https://github.com/valterebelo/AlphaTraderSystem.git
    ```
 
 2. Navegue até o diretório do projeto:
