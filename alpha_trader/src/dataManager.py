@@ -295,6 +295,48 @@ class DataManager:
             return np.nan
 
     def compute_context(self, start, end):
+        start = datetime.strptime(start, '%Y-%m-%d')
+        end = datetime.strptime(end, '%Y-%m-%d')
+        
+        # Retrieve context data
+        context_data = self.get_context_data(pd.to_datetime('2011-08-1'), end)
+
+        # Market condition calculations
+        gradient_numerator = (context_data['price_usd_close'].diff(28) - context_data['price_realized_usd'].diff(28))
+        gradient_mean = gradient_numerator.expanding().mean()
+        gradient_std = gradient_numerator.expanding().std()
+        context_data['28d_mkt_gradient'] = (gradient_numerator - gradient_mean) / gradient_std
+
+        context_data['mayer_multiple'] = context_data['price_usd_close'] / context_data['price_usd_close'].rolling(200).mean()
+        context_data['price_profit_corr'] = context_data['price_usd_close'].rolling(7).corr(context_data['profit_relative'])
+
+        # Simple linear scaling function
+        def linear_scale(value, low, high):
+            # Values below low map to 0, above high map to 1, in between scale linearly
+            return np.clip((value - low) / (high - low), 0, 1)
+
+        # Normalize metrics to 0-1 based on chosen thresholds:
+        # Thresholds chosen from top detection conditions and reasoning about extremes.
+        # Adjust if necessary after backtesting.
+        mvrv_norm = linear_scale(context_data['mvrv_z_score'], 0.0, 3.8)  # 0 to 3.8 range
+        mayer_norm = linear_scale(context_data['mayer_multiple'], 1.0, 1.3)  # 1.0 to 1.3 range
+        nupl_norm = linear_scale(context_data['net_unrealized_profit_loss_account_based'], 0.0, 0.6)  # 0.0 to 0.6 range
+        gradient_norm = linear_scale(context_data['28d_mkt_gradient'], 0.0, 7.0)  # 0.0 to 7.0 range
+
+        # Combine into one continuous context measure:
+        # Average all four normalized values
+        context_data['context'] = (mvrv_norm + mayer_norm + nupl_norm + gradient_norm) / 4.0
+
+        # Drop unnecessary columns
+        context_data.drop(columns=['price_usd_close'], inplace=True)
+
+        # Filter the data to the requested start date
+        context_data = context_data[context_data.index >= start]
+        context_data = context_data[context_data.index <= end]
+
+        return context_data
+    
+    def compute_context_boolean(self, start, end):
         
         start = datetime.strptime(start, '%Y-%m-%d')
         end = datetime.strptime(end, '%Y-%m-%d')
@@ -331,11 +373,15 @@ class DataManager:
         
         return context_data
 
-    def get_data(self, start, end, contextualize=True):
+    def get_data(self, start, end, contextualize=True, boolean=False):
         
         trigger_data = self.compute_triggers(start=start, end=end)
-        context_data = self.compute_context(start=start,end=end)
-    
+
+        if boolean:
+            context_data = self.compute_context_boolean(start=start,end=end)
+        else:
+            context_data = self.compute_context(start=start,end=end)
+
         trigger_data.reset_index(inplace=True)
         context_data.reset_index(inplace=True)
         context_data['t'] = context_data['t'].dt.tz_localize(None)  # Ensure no timezone differences

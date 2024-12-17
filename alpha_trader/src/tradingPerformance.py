@@ -90,11 +90,11 @@ class PerformanceEstimator:
 
     def computeAnnualizedReturn(self):
         total_hours = (self.data.index[-1] - self.data.index[0]).total_seconds() / 3600
-        self.annualizedReturn = (self.data['net_worth'].iloc[-1] / self.data['net_worth'].iloc[0]) ** (8760.0 / total_hours) - 1
+        self.annualizedReturn = (self.data['net_worth'].iloc[-1] / self.data['net_worth'].iloc[0]-1) # ** (8760.0 / total_hours) - 1
         if self.visualize:
             plt.figure(figsize=(10, 6))
             plt.plot(self.data['net_worth'], label='Net Worth')
-            plt.title('Annualized Return')
+            plt.title('Return')
             plt.xlabel('Time')
             plt.ylabel('Net Worth')
             plt.grid(True)
@@ -104,7 +104,7 @@ class PerformanceEstimator:
 
     def computeAnnualizedVolatility(self):
         hourly_returns = self.data['strategy_returns']
-        self.annualizedVolatility = np.std(hourly_returns) * np.sqrt(8760)
+        self.annualizedVolatility = np.std(hourly_returns) #* np.sqrt(8760)
         if self.visualize:
             plt.figure(figsize=(10, 6))
             plt.hist(hourly_returns, bins=50, edgecolor='black')
@@ -200,6 +200,47 @@ class PerformanceEstimator:
             plt.show()
 
         return self.maxDD, self.maxDDD
+    
+    def plotPriceAndPosition(self):
+        """
+        Plots the asset's closing price and the changes in position (long, short, cash),
+        with net worth on a secondary y-axis.
+        """
+        if self.visualize:
+            fig, ax1 = plt.subplots(figsize=(12, 8))
+
+            # Plot the closing price
+            ax1.set_xlabel('Time')
+            ax1.set_ylabel('Close Price', color='tab:blue')
+            ax1.plot(self.data.index, self.data['close'], label='Close Price', color='tab:blue')
+            ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+            # Identify position changes
+            position_changes = self.data['position'].diff().fillna(0) != 0
+
+            # Plot position markers only at changes
+            long_positions = self.data[(self.data['position'] == 1) & position_changes]
+            short_positions = self.data[(self.data['position'] == -1) & position_changes]
+            cash_positions = self.data[(self.data['position'] == 0) & position_changes]
+
+            ax1.scatter(long_positions.index, long_positions['close'], marker='^', color='green', label='Long', s=100)
+            ax1.scatter(short_positions.index, short_positions['close'], marker='v', color='red', label='Short', s=100)
+            ax1.scatter(cash_positions.index, cash_positions['close'], marker='s', color='yellow', label='Cash', s=100)
+
+            # Create a second y-axis for net worth
+            ax2 = ax1.twinx()
+            ax2.set_ylabel('Net Worth', color='tab:orange')
+            ax2.plot(self.data.index, self.data['net_worth'], label='Net Worth', color='tab:orange', linestyle='--')
+            ax2.tick_params(axis='y', labelcolor='tab:orange')
+
+            # Add grid and legend
+            fig.tight_layout()
+            ax1.grid(True)
+            ax1.legend(loc='upper left')
+            ax2.legend(loc='upper right')
+
+            plt.title('Asset Price, Position Changes, and Net Worth')
+            plt.show()
 
     def computeNumberOfTrades(self):
         self.numberOfTrades = self.data['position'].diff().abs().sum() / 2
@@ -224,13 +265,40 @@ class PerformanceEstimator:
             'Sortino Ratio': self.computeSortinoRatio(),
             'Max Drawdown': self.computeMaxDrawdown(),
             'Skewness': self.computeSkewness(),
-            'Number of Trades': self.computeNumberOfTrades()
+            'Number of Trades': self.computeNumberOfTrades(),
+            'Positions': self.plotPriceAndPosition()
         }
         return performance
 
     def displayPerformance(self):
         performance = self.computePerformance()
-        performance_table = tabulate(performance.items(), headers=['Indicador', 'Valor'], tablefmt='pretty')
+        
+        # Format the tuple values
+        if isinstance(performance['Profitability'], tuple):
+            profitability, profit_loss_ratio = performance['Profitability']
+            performance['Profitability'] = f"{profitability:.2%}"
+            performance['Profit/Loss Ratio'] = f"{float(profit_loss_ratio):.2f}"
+        
+        if isinstance(performance['Max Drawdown'], tuple):
+            max_dd, max_dd_duration = performance['Max Drawdown']
+            performance['Max Drawdown'] = f"{float(max_dd):.2%}"
+            performance['Max Drawdown Duration (hours)'] = f"{float(max_dd_duration):.1f}"
+        
+        # Format other numeric values
+        formatted_performance = {
+            key: (
+                f"{value:.2%}" if key in ['Return', 'Volatility']
+                else f"{value:.2f}" if isinstance(value, (float, np.float64, np.float32))
+                else value
+            )
+            for key, value in performance.items()
+        }
+        
+        performance_table = tabulate(
+            formatted_performance.items(), 
+            headers=['Indicator', 'Value'], 
+            tablefmt='pretty'
+        )
         print(performance_table)
 
     
